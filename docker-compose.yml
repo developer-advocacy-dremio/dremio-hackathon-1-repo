@@ -1,0 +1,74 @@
+version: "3"
+
+services:
+  # Nessie Catalog Server Using In-Memory Store
+  nessie:
+    image: projectnessie/nessie:latest
+    container_name: nessie
+    networks:
+      - iceberg
+    ports:
+      - 19120:19120
+
+  # MinIO Storage Server
+  ## Creates two buckets named lakehouse and lake
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    environment:
+      - MINIO_ROOT_USER=admin
+      - MINIO_ROOT_PASSWORD=password
+    networks:
+      - iceberg
+    ports:
+      - 9001:9001
+      - 9000:9000
+    command: ["server", "/data", "--console-address", ":9001"]
+    entrypoint: >
+      /bin/sh -c "
+      minio server /data --console-address ':9001' &
+      sleep 5 &&
+      mc alias set myminio http://localhost:9000 admin password &&
+      mc mb myminio/lakehouse &&
+      mc mb myminio/lake &&
+      tail -f /dev/null
+      "
+
+  # Dremio
+  dremio:
+    platform: linux/x86_64
+    image: dremio/dremio-oss:latest
+    container_name: dremio
+    environment:
+      - DREMIO_JAVA_SERVER_EXTRA_OPTS=-Dpaths.dist=file:///opt/dremio/data/dist
+    networks:
+      - iceberg
+    ports:
+      - 9047:9047
+      - 31010:31010
+      - 32010:32010
+
+  # Superset
+  superset:
+    image: alexmerced/dremio-superset
+    container_name: superset
+    networks:
+      - iceberg
+    ports:
+      - 8088:8088
+
+  # Data Science Notebook (Jupyter Notebook)
+  datanotebook:
+    image: alexmerced/datanotebook
+    container_name: datanotebook
+    environment:
+      - JUPYTER_TOKEN= # Set a token if desired, or leave blank to disable token authentication
+    networks:
+      - iceberg
+    ports:
+      - 8888:8888
+    volumes:
+      - ./notebooks:/home/pydata/work # Mounts a local folder for persistent notebook storage
+
+networks:
+  iceberg:
